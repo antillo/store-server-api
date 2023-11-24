@@ -1,13 +1,16 @@
-import express, { Application } from "express";
-import { Request,Response } from "express";
+import express, {Request,Response,NextFunction} from "express";
+import morgan from 'morgan';
 import * as dotenv from 'dotenv'
 import cors from "cors";
 import helmet from "helmet";
+import { StatusCodes } from "http-status-codes";
 
-import { ArticlesRouter } from "./routes/articlesRouter";
-import { ClientsRouter } from "./routes/clientsRouter";
-import { SalesRouter } from "./routes/salesRouter";
-import { UsersRouter } from "./routes/usersRouter";
+import {DataSource} from "typeorm";
+
+import logger from "./shared/logger";
+
+import BaseRouter from './routes'
+import { AppDataSource } from "./config/data.source";
 
 dotenv.config()
 
@@ -17,21 +20,36 @@ export default class Server{
     constructor(){
         this.app = express()
         this.port = Number(process.env['PORT'])
-        this.app.use(helmet())
+        this.dbConnect();
+        if (process.env.NODE_ENV === 'development'){
+            this.app.use(morgan('dev'));
+        }else{
+            this.app.use(helmet())
+        }
         this.app.use(cors())
-        this.app.use(this.routes())
+        this.app.use(express.json())
+        this.app.use('/api',BaseRouter)
+
+        this.app.use((err:Error,req:Request,res:Response,next:NextFunction)=>{
+            logger.error(err.message,err);
+            return res.status(StatusCodes.BAD_REQUEST).json(
+                {
+                    error: err.message,
+                });
+        });
+
     }
 
-    private routes(): Array<express.Router>{
-        const routes : Array<express.Router> = new Array<express.Router>()
-
-        routes.push(new ArticlesRouter().router)
-        routes.push(new ClientsRouter().router)
-        routes.push(new SalesRouter().router)
-        routes.push(new UsersRouter().router)
-
-        return routes
+    private async dbConnect():Promise<DataSource | void>
+    {
+        try {
+            await AppDataSource.initialize();
+            logger.info("Connected to database");
+        } catch (err) {
+            console.log(err);
+        }
     }
+
     public start(){
         this.app.listen(this.port,()=>{
             console.log('Servidor iniciado en el puerto', this.port)
